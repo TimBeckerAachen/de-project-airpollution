@@ -6,11 +6,12 @@ ENV AIRFLOW_HOME=/opt/airflow
 
 USER root
 RUN apt-get update -qq && apt-get install vim unzip -qqq
-# git gcc g++ -qqq
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# copy pyspark script
+COPY code/process_input_data.py .
 
 # Ref: https://airflow.apache.org/docs/docker-stack/recipes.html
 

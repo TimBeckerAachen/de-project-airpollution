@@ -63,6 +63,7 @@ x-airflow-common:
     AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: 'google-cloud-platform://?extra__google_cloud_platform__key_path=/.google/credentials/airpollution-348907-9b63fa676541.json'
     GCP_PROJECT_ID: 'airpollution-348907'
     GCP_GCS_BUCKET: 'data_lake_airpollution-348907'
+    GCP_GCS_BUCKET_CLUSTER: 'spark_cluster_bucket_airpollution-348907'
     KAGGLE_USERNAME: '$KAGGLE_USERNAME'
     KAGGLE_KEY: '$KAGGLE_KEY'
   volumes:

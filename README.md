@@ -11,6 +11,8 @@ terraform init
 terraform plan
 terraform apply
 
+gcloud auth activate-service-account --key-file=/.google/credentials/airpollution-348907-9b63fa676541.json
+
 gcloud auth login --cred-file=/home/tim/.google/credentials/airpollution-348907-9b63fa676541.json
 gcloud config set project airpollution-348907
 gsutil cp code/process_input_data.py gs://spark_cluster_bucket_airpollution-348907/code/process_input_data.py

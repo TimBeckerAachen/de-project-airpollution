@@ -11,10 +11,14 @@ from google.cloud import storage
 import pyarrow.csv as pv
 import pyarrow.parquet as pq
 
+GC_CREDENTIALS_FILE = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
 PROJECT_ID = os.environ.get("GCP_PROJECT_ID")
-BUCKET = os.environ.get("GCP_GCS_BUCKET")
+DATA_BUCKET = os.environ.get("GCP_GCS_BUCKET")
+CLUSTER_BUCKET = os.environ.get("GCP_GCS_BUCKET_CLUSTER")
 path_to_local_home = os.environ.get("AIRFLOW_HOME", "/opt/airflow/")
 BIGQUERY_DATASET = os.environ.get("BIGQUERY_DATASET", 'airpollution_data_all')
+pyspark_script = 'process_input_data.py'
+bq_table = 'airpollution-report'
 files_to_upload = ['Measurement_info',
                    'Measurement_item_info',
                    'Measurement_station_info']
@@ -115,43 +119,47 @@ with DAG(
         task_id="local_to_gcs_task",
         python_callable=upload_parquet_to_gcs,
         op_kwargs={
-            "bucket": BUCKET
+            "bucket": DATA_BUCKET
         },
     )
 
-    external_table_tasks = []
-    for file in files_to_upload:
-        # TODO: file too small??
-        bq_external_table_task = BigQueryCreateExternalTableOperator(
-            task_id=f"bq_external_table_{file}_task",
-            table_resource={
-                "tableReference": {
-                    "projectId": PROJECT_ID,
-                    "datasetId": BIGQUERY_DATASET,
-                    "tableId": f"airpollution_external_table_{file}",
-                },
-                "externalDataConfiguration": {
-                    "autodetect": "True",
-                    "sourceFormat": f"PARQUET",
-                    "sourceUris": [f"gs://{BUCKET}/airpollution/{file}.parquet"],
-                },
-            },
-        )
+    gc_auth_task = BashOperator(
+        task_id="gc_auth_task",
+        bash_command=f"gcloud auth activate-service-account --key-file={GC_CREDENTIALS_FILE}"
+    )
 
-        external_table_tasks.append(bq_external_table_task)
+    upload_pyspark_script_task = BashOperator(
+        task_id="upload_pyspark_script_task",
+        bash_command=f"gsutil cp {path_to_local_home}/{pyspark_script} gs://{CLUSTER_BUCKET}/code/{pyspark_script}"
+    )
 
-    CREATE_BQ_TBL_QUERY = (
-        f"CREATE OR REPLACE TABLE {BIGQUERY_DATASET}.airpollution \
+    join_tables_task = BashOperator(
+        task_id="join_tables_task",
+        bash_command=f"gcloud dataproc jobs submit pyspark "
+                     # TODO: get from env
+                     f"--cluster=airpollution-spark-cluster "
+                     f"--project={PROJECT_ID} --region=europe-west6 "
+                     f"--jars=gs://spark-lib/bigquery/spark-bigquery-latest_2.12.jar "
+                     f"gs://{CLUSTER_BUCKET}/code/{pyspark_script} "
+                     f"-- "
+                     f"--input_airpollution_data=gs://{DATA_BUCKET}/airpollution/{files_to_upload[0]}.parquet "
+                     f"--input_item_info=gs://{DATA_BUCKET}/airpollution/{files_to_upload[1]}.parquet "
+                     f"--input_station_info=gs://{DATA_BUCKET}/airpollution/{files_to_upload[2]}.parquet "
+                     f"--output={BIGQUERY_DATASET}.{bq_table}"
+    )
+
+    PARTITION_BQ_TBL_QUERY = (
+        f"CREATE OR REPLACE TABLE {BIGQUERY_DATASET}.{bq_table} \
                 PARTITION BY DATE(Measurement_date) \
                 AS \
-                SELECT * FROM {BIGQUERY_DATASET}.airpollution_external_table_Measurement_info;"
+                SELECT * FROM {BIGQUERY_DATASET}.{bq_table}-partitioned;"
     )
 
     bq_create_partitioned_table_job = BigQueryInsertJobOperator(
         task_id=f"bq_create_partitioned_table_task",
         configuration={
             "query": {
-                "query": CREATE_BQ_TBL_QUERY,
+                "query": PARTITION_BQ_TBL_QUERY,
                 "useLegacySql": False,
             }
         }
@@ -162,6 +170,6 @@ with DAG(
          bash_command=f"rm -r {path_to_local_home}/AirPollutionSeoul {path_to_local_home}/*.parquet"
     )
 
-    install_kaggle_task >> download_dataset_task >> format_to_parquet_task >> local_to_gcs_task >> external_table_tasks >> bq_create_partitioned_table_job >> cleanup_task
+    install_kaggle_task >> download_dataset_task >> format_to_parquet_task >> local_to_gcs_task >> gc_auth_task >> upload_pyspark_script_task >> join_tables_task >> bq_create_partitioned_table_job >> cleanup_task
 
 
