@@ -5,17 +5,20 @@ import argparse
 
 import pyspark
 from pyspark.sql import SparkSession
-from pyspark.sql import functions as F
 
 
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--input_airpollution_data', required=True)
+parser.add_argument('--input_item_info', required=True)
+parser.add_argument('--input_station_info', required=True)
 parser.add_argument('--output', required=True)
 
 args = parser.parse_args()
 
 input_airpolution_data = args.input_airpollution_data
+input_item_info = args.input_item_info
+input_station_info = args.input_station_info
 output = args.output
 
 
@@ -23,25 +26,18 @@ spark = SparkSession.builder \
     .appName('air-pollution') \
     .getOrCreate()
 
-# spark = SparkSession.builder \
-#     .master("local[*]") \
-#     .appName('test') \
-#     .getOrCreate()
-
 spark.conf.set('temporaryGcsBucket', 'spark_cluster_bucket_airpollution-348907')
 
 df_airpollution = spark.read.parquet(input_airpolution_data)
-# df_airpollution = spark.read.parquet('/home/tim/play/DE-project/Measurement_info.parquet')
-print('reading done')
+df_item = spark.read.parquet(input_item_info)
+df_station = spark.read.parquet(input_station_info)
 
-# df_airpollution = df_airpollution \
-#     .withColumnRenamed('Station code', 'station_code')
+print('done reading input files')
 
+df_join = df_airpollution.join(df_item, on=['item_code'], how='outer')
+df_join_all = df_join.join(df_station, on=['station_code'], how='outer')
 
-df_airpollution.write.format('bigquery') \
+df_join_all.write.format('bigquery') \
     .option('table', output) \
+    .mode('overwrite') \
     .save()
-
-# df_airpollution.write.parquet('zones')
-
-
