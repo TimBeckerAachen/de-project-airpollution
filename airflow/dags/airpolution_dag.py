@@ -149,13 +149,13 @@ with DAG(
     )
 
     PARTITION_BQ_TBL_QUERY = (
-        f"CREATE OR REPLACE TABLE {BIGQUERY_DATASET}.{bq_table} \
+        f"CREATE OR REPLACE TABLE `{BIGQUERY_DATASET}.{bq_table}-partitioned` \
                 PARTITION BY DATE(Measurement_date) \
                 AS \
-                SELECT * FROM {BIGQUERY_DATASET}.{bq_table}-partitioned;"
+                SELECT * FROM `{BIGQUERY_DATASET}.{bq_table}`;"
     )
 
-    bq_create_partitioned_table_job = BigQueryInsertJobOperator(
+    bq_create_partitioned_table_task = BigQueryInsertJobOperator(
         task_id=f"bq_create_partitioned_table_task",
         configuration={
             "query": {
@@ -170,6 +170,6 @@ with DAG(
          bash_command=f"rm -r {path_to_local_home}/AirPollutionSeoul {path_to_local_home}/*.parquet"
     )
 
-    install_kaggle_task >> download_dataset_task >> format_to_parquet_task >> local_to_gcs_task >> gc_auth_task >> upload_pyspark_script_task >> join_tables_task >> bq_create_partitioned_table_job >> cleanup_task
+    install_kaggle_task >> download_dataset_task >> format_to_parquet_task >> local_to_gcs_task >> gc_auth_task >> upload_pyspark_script_task >> join_tables_task >> bq_create_partitioned_table_task >> cleanup_task
 
 
